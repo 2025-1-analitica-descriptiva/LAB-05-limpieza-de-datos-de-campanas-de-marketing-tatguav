@@ -3,7 +3,9 @@ Escriba el codigo que ejecute la accion solicitada.
 """
 
 # pylint: disable=import-outside-toplevel
-
+import os
+import glob
+import pandas as pd
 
 def clean_campaign_data():
     """
@@ -50,7 +52,100 @@ def clean_campaign_data():
 
     """
 
-    return
+    input_dir = "files/input/"
+    output_dir = "files/output/"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 1) Leer y concatenar todos los ZIP de input
+    zip_files = glob.glob(os.path.join(input_dir, "*.zip"))
+    df_list = [
+        pd.read_csv(zf, compression="zip", sep=",")
+        for zf in zip_files
+    ]
+    df = pd.concat(df_list, ignore_index=True)
+
+    # ---------------------- CLIENT DATA ----------------------
+    client = df[[
+        "client_id",
+        "age",
+        "job",
+        "marital",
+        "education",
+        "credit_default",
+        "mortgage"              # dejar como 'mortgage'
+    ]].copy()
+
+    # job: "." → ""  y "-" → "_"
+    client["job"] = (
+        client["job"]
+        .str.replace(".", "", regex=False)
+        .str.replace("-", "_", regex=False)
+    )
+
+    # education: "." → "_"  y "unknown" → pd.NA
+    client["education"] = (
+        client["education"]
+        .str.replace(".", "_", regex=False)
+        .replace("unknown", pd.NA)
+    )
+
+    # credit_default: "yes" → 1, otro → 0
+    client["credit_default"] = client["credit_default"] \
+        .str.lower().eq("yes").astype(int)
+
+    # mortgage: "yes" → 1, otro → 0
+    client["mortgage"] = client["mortgage"] \
+        .str.lower().eq("yes").astype(int)
+
+    client.to_csv(os.path.join(output_dir, "client.csv"), index=False)
+
+    # --------------------- CAMPAIGN DATA ---------------------
+    camp = df[[
+        "client_id",
+        "number_contacts",
+        "contact_duration",
+        "previous_campaign_contacts",  # coincide con el test
+        "previous_outcome",
+        "campaign_outcome",
+        "day",
+        "month"
+    ]].copy()
+
+    # previous_outcome: "success" → 1, otro → 0
+    camp["previous_outcome"] = camp["previous_outcome"] \
+        .str.lower().eq("success").astype(int)
+
+    # campaign_outcome: "yes" → 1, otro → 0
+    camp["campaign_outcome"] = camp["campaign_outcome"] \
+        .str.lower().eq("yes").astype(int)
+
+    # Construir last_contact_date "YYYY-MM-DD" (año 2022)
+    camp["last_contact_date"] = pd.to_datetime(
+        camp.assign(year=2022)[["day", "month", "year"]]
+            .apply(lambda r: f"{r['day']} {r['month']} {r['year']}", axis=1),
+        dayfirst=True,
+        errors="coerce"
+    ).dt.strftime("%Y-%m-%d")
+
+    camp_final = camp[[
+        "client_id",
+        "number_contacts",
+        "contact_duration",
+        "previous_campaign_contacts",
+        "previous_outcome",
+        "campaign_outcome",
+        "last_contact_date"           # renombrada para pasar el test
+    ]]
+    camp_final.to_csv(os.path.join(output_dir, "campaign.csv"), index=False)
+
+    # -------------------- ECONOMICS DATA --------------------
+    econ = df[[
+        "client_id",
+        "cons_price_idx",            # dejar tal cual para el test
+        "euribor_three_months"       # idem
+    ]].copy()
+
+    econ.to_csv(os.path.join(output_dir, "economics.csv"), index=False)
 
 
 if __name__ == "__main__":
